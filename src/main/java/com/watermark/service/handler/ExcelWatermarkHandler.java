@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.*;
+import org.springframework.stereotype.Component;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
@@ -16,11 +17,13 @@ import java.io.InputStream;
 import java.io.OutputStream;
 
 @Slf4j
-public class ExcelWatermarkHandler {
+@Component
+public class ExcelWatermarkHandler implements WatermarkHandler {
 
     /**
      * 给 Excel 添加水印
      */
+    @Override
     public void addWatermark(InputStream input, OutputStream output, WatermarkConfig config) throws Exception {
         try (XSSFWorkbook workbook = new XSSFWorkbook(input)) {
             for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
@@ -29,6 +32,11 @@ public class ExcelWatermarkHandler {
             }
             workbook.write(output);
         }
+    }
+
+    @Override
+    public boolean supports(String fileName) {
+        return fileName.toLowerCase().endsWith(".xlsx") || fileName.toLowerCase().endsWith(".xls");
     }
 
     /**
@@ -76,7 +84,7 @@ public class ExcelWatermarkHandler {
             // 透明度和颜色
             g2d.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, config.getOpacity()));
             g2d.setColor(config.getColor());
-            g2d.setFont(FontUtils.getSimSunFont(config.getFontSize()));
+            g2d.setFont(FontUtils.getChineseFont(config.getFontSize()));
 
             // 旋转
             if (config.getRotation() != 0) {

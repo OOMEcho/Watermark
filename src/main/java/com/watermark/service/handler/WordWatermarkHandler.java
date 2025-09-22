@@ -6,12 +6,15 @@ import org.apache.poi.xwpf.usermodel.*;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTJc;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPPr;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.STJc;
+import org.springframework.stereotype.Component;
 
 import java.io.InputStream;
 import java.io.OutputStream;
 
-public class WordWatermarkHandler {
+@Component
+public class WordWatermarkHandler implements WatermarkHandler {
 
+    @Override
     public void addWatermark(InputStream input, OutputStream output, WatermarkConfig config) throws Exception {
         XWPFDocument doc = new XWPFDocument(input);
 
@@ -19,6 +22,11 @@ public class WordWatermarkHandler {
 
         doc.write(output);
         doc.close();
+    }
+
+    @Override
+    public boolean supports(String fileName) {
+        return fileName.toLowerCase().endsWith(".docx") || fileName.toLowerCase().endsWith(".doc");
     }
 
     private void addBackgroundWatermark(XWPFDocument doc, WatermarkConfig config) {

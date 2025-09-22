@@ -5,14 +5,17 @@ import com.itextpdf.text.Element;
 import com.itextpdf.text.Rectangle;
 import com.itextpdf.text.pdf.*;
 import com.watermark.config.WatermarkConfig;
+import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 
-public class PdfWatermarkHandler {
+@Component
+public class PdfWatermarkHandler implements WatermarkHandler {
 
+    @Override
     public void addWatermark(InputStream input, OutputStream output, WatermarkConfig config) throws Exception {
         PdfReader reader = null;
         PdfStamper stamper = null;
@@ -33,12 +36,21 @@ public class PdfWatermarkHandler {
 
         } finally {
             if (stamper != null) {
-                try { stamper.close(); } catch (Exception e) { /* 忽略关闭异常 */ }
+                try {
+                    stamper.close();
+                } catch (Exception e) { /* 忽略关闭异常 */ }
             }
             if (reader != null) {
-                try { reader.close(); } catch (Exception e) { /* 忽略关闭异常 */ }
+                try {
+                    reader.close();
+                } catch (Exception e) { /* 忽略关闭异常 */ }
             }
         }
+    }
+
+    @Override
+    public boolean supports(String fileName) {
+        return fileName.toLowerCase().endsWith(".pdf");
     }
 
     private BaseFont loadFont() {
@@ -80,26 +92,40 @@ public class PdfWatermarkHandler {
         content.restoreState();
     }
 
-    /** 计算单条水印位置 */
+    /**
+     * 计算单条水印位置
+     */
     private float[] calculatePosition(WatermarkConfig.Position position, Rectangle pageSize) {
         float x, y;
         switch (position) {
             case TOP_LEFT:
-                x = 100; y = pageSize.getHeight() - 100; break;
+                x = 100;
+                y = pageSize.getHeight() - 100;
+                break;
             case TOP_RIGHT:
-                x = pageSize.getWidth() - 100; y = pageSize.getHeight() - 100; break;
+                x = pageSize.getWidth() - 100;
+                y = pageSize.getHeight() - 100;
+                break;
             case BOTTOM_LEFT:
-                x = 100; y = 100; break;
+                x = 100;
+                y = 100;
+                break;
             case BOTTOM_RIGHT:
-                x = pageSize.getWidth() - 100; y = 100; break;
+                x = pageSize.getWidth() - 100;
+                y = 100;
+                break;
             case CENTER:
             default:
-                x = pageSize.getWidth() / 2; y = pageSize.getHeight() / 2; break;
+                x = pageSize.getWidth() / 2;
+                y = pageSize.getHeight() / 2;
+                break;
         }
         return new float[]{x, y};
     }
 
-    /** 斜线平铺水印，动态计算步长，覆盖整页 */
+    /**
+     * 斜线平铺水印，动态计算步长，覆盖整页
+     */
     private void addDiagonalWatermark(PdfContentByte content, BaseFont baseFont, Rectangle pageSize, WatermarkConfig config) {
         float textWidth = baseFont.getWidthPoint(config.getText(), config.getFontSize());
         float textHeight = config.getFontSize();

@@ -2,6 +2,7 @@ package com.watermark.service.handler;
 
 import com.watermark.config.WatermarkConfig;
 import com.watermark.utils.FontUtils;
+import org.springframework.stereotype.Component;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
@@ -9,9 +10,15 @@ import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Arrays;
+import java.util.List;
 
-public class ImageWatermarkHandler {
+@Component
+public class ImageWatermarkHandler implements WatermarkHandler {
 
+    private static final List<String> IMAGE_EXTENSIONS = Arrays.asList(".jpg", ".jpeg", ".png", ".gif", ".bmp");
+
+    @Override
     public void addWatermark(InputStream input, OutputStream output, WatermarkConfig config) throws Exception {
         BufferedImage sourceImage = ImageIO.read(input);
         if (sourceImage == null) {
@@ -34,6 +41,17 @@ public class ImageWatermarkHandler {
 
         // 始终输出 PNG 保留透明度
         ImageIO.write(watermarkedImage, "png", output);
+    }
+
+    @Override
+    public boolean supports(String fileName) {
+        String lower = fileName.toLowerCase();
+        for (String ext : IMAGE_EXTENSIONS) {
+            if (lower.endsWith(ext)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -59,7 +77,7 @@ public class ImageWatermarkHandler {
     private void addTextWatermark(Graphics2D g2d, WatermarkConfig config, int width, int height) {
         g2d.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, config.getOpacity()));
         g2d.setColor(config.getColor());
-        g2d.setFont(FontUtils.getSimSunFont(config.getFontSize()));
+        g2d.setFont(FontUtils.getChineseFont(config.getFontSize()));
 
         FontMetrics fm = g2d.getFontMetrics();
         int textWidth = fm.stringWidth(config.getText());
