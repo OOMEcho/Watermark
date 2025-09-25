@@ -83,7 +83,7 @@ public class ExcelWatermarkHandler implements WatermarkHandler {
 
             // 透明度和颜色
             g2d.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, config.getOpacity()));
-            g2d.setColor(config.getColor());
+            g2d.setColor(config.getColorObject());
             g2d.setFont(FontUtils.getChineseFont(config.getFontSize()));
 
             // 旋转

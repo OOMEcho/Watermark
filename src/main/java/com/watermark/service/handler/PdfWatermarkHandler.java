@@ -79,7 +79,7 @@ public class PdfWatermarkHandler implements WatermarkHandler {
         gs.setFillOpacity(config.getOpacity());
         gs.setStrokeOpacity(config.getOpacity());
         content.setGState(gs);
-        content.setColorFill(new BaseColor(config.getColor().getRGB()));
+        content.setColorFill(new BaseColor(config.getColorObject().getRGB()));
         content.beginText();
         content.setFontAndSize(baseFont, config.getFontSize());
 

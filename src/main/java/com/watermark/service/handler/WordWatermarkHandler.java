@@ -63,7 +63,7 @@ public class WordWatermarkHandler implements WatermarkHandler {
         run.setFontSize(config.getFontSize());
         run.setText(config.getText());
 
-        String colorHex = String.format("%06X", config.getColor().getRGB() & 0xFFFFFF);
+        String colorHex = String.format("%06X", config.getColorObject().getRGB() & 0xFFFFFF);
         run.setColor(colorHex);
 
         try {
@@ -84,7 +84,7 @@ public class WordWatermarkHandler implements WatermarkHandler {
 
         Font chineseFont = FontUtils.getChineseFont(config.getFontSize());
         String fontFamily = chineseFont.getFontName();
-        String colorHex = String.format("%06X", config.getColor().getRGB() & 0xFFFFFF);
+        String colorHex = String.format("%06X", config.getColorObject().getRGB() & 0xFFFFFF);
 
         // 创建多个水印实现平铺效果
         int[] positions = {

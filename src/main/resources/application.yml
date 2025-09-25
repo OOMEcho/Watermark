@@ -8,3 +8,11 @@ spring:
     multipart:
       max-file-size: 100MB
       max-request-size: 100MB
+
+watermark:
+  text: aegis
+  opacity: 0.3
+  font-size: 40
+  color: GRAY
+  rotation: 45
+  position: DIAGONAL

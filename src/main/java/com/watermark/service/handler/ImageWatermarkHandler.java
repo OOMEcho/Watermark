@@ -76,7 +76,7 @@ public class ImageWatermarkHandler implements WatermarkHandler {
      */
     private void addTextWatermark(Graphics2D g2d, WatermarkConfig config, int width, int height) {
         g2d.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, config.getOpacity()));
-        g2d.setColor(config.getColor());
+        g2d.setColor(config.getColorObject());
         g2d.setFont(FontUtils.getChineseFont(config.getFontSize()));
 
         FontMetrics fm = g2d.getFontMetrics();
