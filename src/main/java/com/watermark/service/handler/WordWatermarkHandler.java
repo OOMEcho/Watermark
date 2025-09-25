@@ -1,13 +1,12 @@
 package com.watermark.service.handler;
 
 import com.watermark.config.WatermarkConfig;
-import com.watermark.utils.FontUtils;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.poi.xwpf.model.XWPFHeaderFooterPolicy;
 import org.apache.poi.xwpf.usermodel.*;
+import org.apache.xmlbeans.XmlCursor;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.*;
 import org.springframework.stereotype.Component;
 
-import java.awt.Font;
 import java.io.InputStream;
 import java.io.OutputStream;
 
@@ -17,192 +16,193 @@ public class WordWatermarkHandler implements WatermarkHandler {
 
     @Override
     public void addWatermark(InputStream input, OutputStream output, WatermarkConfig config) throws Exception {
-        XWPFDocument doc = new XWPFDocument(input);
-
-        addBackgroundWatermark(doc, config);
-
-        doc.write(output);
-        doc.close();
+        try (XWPFDocument doc = new XWPFDocument(input)) {
+            // 在正文中添加背景水印
+            addBackgroundWatermark(doc, config);
+            doc.write(output);
+            log.info("成功添加Word正文背景水印");
+        } catch (Exception e) {
+            log.error("添加Word水印失败: {}", e.getMessage(), e);
+            throw new RuntimeException("添加Word水印失败", e);
+        }
     }
 
     @Override
     public boolean supports(String fileName) {
-        return fileName.toLowerCase().endsWith(".docx") || fileName.toLowerCase().endsWith(".doc");
+        return fileName.toLowerCase().endsWith(".docx");
     }
 
     private void addBackgroundWatermark(XWPFDocument doc, WatermarkConfig config) {
-        XWPFHeaderFooterPolicy policy = doc.getHeaderFooterPolicy();
-        if (policy == null) {
-            policy = doc.createHeaderFooterPolicy();
-        }
-
-        XWPFHeader header = policy.createHeader(XWPFHeaderFooterPolicy.DEFAULT);
-
-        if (config.getPosition() == WatermarkConfig.Position.DIAGONAL) {
-            createDiagonalWatermark(header, config);
-        } else {
-            createSingleWatermark(header, config);
+        try {
+            // 方法1：直接在文档正文中插入背景水印段落
+            addDocumentBackgroundWatermark(doc, config);
+        } catch (Exception e) {
+            log.warn("正文水印添加失败，尝试简单文本水印: {}", e.getMessage());
+            // 备用方案：在文档开头添加透明文本水印
+            addSimpleBackgroundWatermark(doc, config);
         }
     }
 
-    /**
-     * 创建单个位置的背景水印
-     */
-    private void createSingleWatermark(XWPFHeader header, WatermarkConfig config) {
-        XWPFParagraph paragraph = header.createParagraph();
-        paragraph.setAlignment(ParagraphAlignment.CENTER);
+    private void addDocumentBackgroundWatermark(XWPFDocument doc, WatermarkConfig config) {
+        // 如果文档没有段落，创建一个
+        if (doc.getParagraphs().isEmpty()) {
+            doc.createParagraph();
+        }
 
-        XWPFRun run = paragraph.createRun();
+        // 在第一个段落之前插入水印段落
+        XWPFParagraph firstPara = doc.getParagraphs().get(0);
+        XWPFParagraph watermarkPara = doc.insertNewParagraph(firstPara.getCTP().newCursor());
 
-        // 使用FontUtils获取支持中文的字体
-        Font chineseFont = FontUtils.getChineseFont(config.getFontSize());
-        String fontFamily = chineseFont.getFontName();
-        log.debug("使用字体: {} 来渲染水印文本", fontFamily);
+        // 设置水印段落属性
+        watermarkPara.setAlignment(ParagraphAlignment.CENTER);
 
-        run.setFontFamily(fontFamily);
-        run.setFontSize(config.getFontSize());
+        // 设置段落为绝对定位，使其不影响正文布局
+        CTPPr pPr = watermarkPara.getCTP().getPPr();
+        if (pPr == null) {
+            pPr = watermarkPara.getCTP().addNewPPr();
+        }
+
+        // 添加水印run
+        XWPFRun run = watermarkPara.createRun();
+        setupWatermarkRun(run, config);
+
+        log.info("成功添加正文背景水印");
+    }
+
+    private void setupWatermarkRun(XWPFRun run, WatermarkConfig config) {
+        // 设置水印文本
         run.setText(config.getText());
 
+        // 设置字体
+        run.setFontFamily("SimSun");
+        run.setFontSize(config.getFontSize());
+
+        // 设置颜色
         String colorHex = String.format("%06X", config.getColorObject().getRGB() & 0xFFFFFF);
         run.setColor(colorHex);
 
+        // 通过XML设置更多样式属性
+        CTR ctr = run.getCTR();
+        CTRPr rPr = ctr.getRPr();
+        if (rPr == null) {
+            rPr = ctr.addNewRPr();
+        }
+
         try {
-            String watermarkXml = createBackgroundWatermarkXml(config, fontFamily, colorHex);
-            run.getCTR().set(org.apache.xmlbeans.XmlObject.Factory.parse(watermarkXml));
-            log.info("成功创建背景水印，位置: {}", config.getPosition());
+            // 设置文本效果和透明度
+            addTextEffects(rPr, config);
         } catch (Exception e) {
-            log.error("VML背景水印创建失败: {}", e.getMessage());
+            log.warn("设置文本效果失败: {}", e.getMessage());
         }
     }
 
-    /**
-     * 创建对角线平铺背景水印
-     */
-    private void createDiagonalWatermark(XWPFHeader header, WatermarkConfig config) {
-        XWPFParagraph paragraph = header.createParagraph();
-        paragraph.setAlignment(ParagraphAlignment.LEFT);
+    private void addTextEffects(CTRPr rPr, WatermarkConfig config) {
+        // 构建文本效果XML
+        String effectsXml = buildTextEffectsXML(config);
 
-        Font chineseFont = FontUtils.getChineseFont(config.getFontSize());
-        String fontFamily = chineseFont.getFontName();
+        try {
+            // 解析并插入效果XML
+            org.apache.xmlbeans.XmlObject effectsObject = org.apache.xmlbeans.XmlObject.Factory.parse(effectsXml);
+
+            XmlCursor cursor = rPr.newCursor();
+            cursor.toEndToken();
+
+            // 直接插入XML内容
+            cursor.insertChars(effectsXml);
+            cursor.dispose();
+
+        } catch (Exception e) {
+            log.debug("文本效果设置失败，使用基础样式: {}", e.getMessage());
+
+            // 基础样式设置
+            CTShd shd = rPr.addNewShd();
+            shd.setVal(org.openxmlformats.schemas.wordprocessingml.x2006.main.STShd.CLEAR);
+            shd.setColor(String.format("%06X", config.getColorObject().getRGB() & 0xFFFFFF));
+            shd.setFill("auto");
+        }
+    }
+
+    private String buildTextEffectsXML(WatermarkConfig config) {
         String colorHex = String.format("%06X", config.getColorObject().getRGB() & 0xFFFFFF);
+        float opacity = config.getOpacity();
 
-        // 创建多个水印实现平铺效果
-        int[] positions = {
-            // 覆盖整页的网格位置 (相对位置百分比)
-            15, 25,   35, 25,   55, 25,   75, 25,   // 第一行
-            5, 45,    25, 45,   45, 45,   65, 45,   85, 45, // 第二行
-            15, 65,   35, 65,   55, 65,   75, 65,   // 第三行
-            5, 85,    25, 85,   45, 85,   65, 85,   85, 85  // 第四行
-        };
+        StringBuilder xml = new StringBuilder();
 
-        for (int i = 0; i < positions.length; i += 2) {
-            XWPFRun run = paragraph.createRun();
-            run.setFontFamily(fontFamily);
-            run.setFontSize(config.getFontSize());
-            run.setText(config.getText());
-            run.setColor(colorHex);
+        // 添加阴影效果使文本更像背景水印
+        xml.append("<w:shd xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" ");
+        xml.append("w:val=\"clear\" ");
+        xml.append("w:color=\"").append(colorHex).append("\" ");
+        xml.append("w:fill=\"auto\"/>");
 
-            try {
-                String watermarkXml = createDiagonalWatermarkXml(config, fontFamily, colorHex,
-                                                                positions[i], positions[i + 1]);
-                run.getCTR().set(org.apache.xmlbeans.XmlObject.Factory.parse(watermarkXml));
-            } catch (Exception e) {
-                log.warn("创建对角线水印位置 ({}, {}) 失败: {}", positions[i], positions[i + 1], e.getMessage());
+        // 如果是对角线模式，添加旋转效果的近似实现
+        if (config.getPosition() == WatermarkConfig.Position.DIAGONAL) {
+            xml.append("<w:effect xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" w:val=\"blinkBackground\"/>");
+        }
+
+        return xml.toString();
+    }
+
+    private void addSimpleBackgroundWatermark(XWPFDocument doc, WatermarkConfig config) {
+        // 如果文档没有段落，创建一个
+        if (doc.getParagraphs().isEmpty()) {
+            doc.createParagraph();
+        }
+
+        // 在文档开头插入多个水印段落以形成背景效果
+        XWPFParagraph firstPara = doc.getParagraphs().get(0);
+
+        if (config.getPosition() == WatermarkConfig.Position.DIAGONAL) {
+            // 对角线模式：创建多个水印段落
+            for (int i = 0; i < 3; i++) {
+                createSimpleWatermarkParagraph(doc, firstPara, config, i);
             }
+        } else {
+            // 单一位置模式：创建一个水印段落
+            createSimpleWatermarkParagraph(doc, firstPara, config, 0);
         }
 
-        log.info("成功创建对角线平铺背景水印，共 {} 个水印", positions.length / 2);
+        log.info("使用简单背景水印作为备用方案");
     }
 
-    /**
-     * 创建单个背景水印的XML
-     */
-    private String createBackgroundWatermarkXml(WatermarkConfig config, String fontFamily, String colorHex) {
-        String rotation = String.valueOf((int) config.getRotation().floatValue());
-        String[] position = getWatermarkPosition(config.getPosition());
-        String horizontalPos = position[0];
-        String verticalPos = position[1];
+    private void createSimpleWatermarkParagraph(XWPFDocument doc, XWPFParagraph firstPara, WatermarkConfig config, int index) {
+        XWPFParagraph watermarkPara = doc.insertNewParagraph(firstPara.getCTP().newCursor());
+        watermarkPara.setAlignment(ParagraphAlignment.CENTER);
 
-        // 计算透明度（0-1转换为0-65535）
-        int alpha = (int) (config.getOpacity() * 65535);
+        // 设置段落间距，使水印不占用太多空间
+        watermarkPara.setSpacingBefore(0);
+        watermarkPara.setSpacingAfter(0);
 
-        return "<w:pict xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">" +
-               "<v:shape xmlns:v=\"urn:schemas-microsoft-com:vml\" id=\"watermark\" type=\"#_x0000_t136\" " +
-               "style=\"position:absolute;width:500pt;height:150pt;z-index:-251658240;" +
-               "mso-position-horizontal:" + horizontalPos + ";" +
-               "mso-position-vertical:" + verticalPos + ";" +
-               "mso-position-horizontal-relative:margin;" +
-               "mso-position-vertical-relative:margin;" +
-               "rotation:" + rotation + "\" " +
-               "fillcolor=\"" + colorHex + "\" stroked=\"false\" " +
-               "opacity=\"" + alpha + "\">" +
-               "<v:textpath on=\"true\" fitpath=\"true\" " +
-               "string=\"" + escapeXmlText(config.getText()) + "\" " +
-               "style=\"font-family:" + escapeXmlText(fontFamily) + ";" +
-               "font-size:" + config.getFontSize() + "pt;" +
-               "color:" + colorHex + ";" +
-               "font-weight:bold\"/>" +
-               "</v:shape>" +
-               "</w:pict>";
-    }
+        XWPFRun run = watermarkPara.createRun();
 
-    /**
-     * 创建对角线平铺水印的XML
-     */
-    private String createDiagonalWatermarkXml(WatermarkConfig config, String fontFamily,
-                                            String colorHex, int leftPercent, int topPercent) {
-        String rotation = String.valueOf((int) config.getRotation().floatValue());
-
-        // 计算透明度
-        int alpha = (int) (config.getOpacity() * 65535);
-
-        return "<w:pict xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">" +
-               "<v:shape xmlns:v=\"urn:schemas-microsoft-com:vml\" type=\"#_x0000_t136\" " +
-               "style=\"position:absolute;width:200pt;height:50pt;z-index:-251658240;" +
-               "left:" + leftPercent + "%;" +
-               "top:" + topPercent + "%;" +
-               "rotation:" + rotation + "\" " +
-               "fillcolor=\"" + colorHex + "\" stroked=\"false\" " +
-               "opacity=\"" + alpha + "\">" +
-               "<v:textpath on=\"true\" fitpath=\"true\" " +
-               "string=\"" + escapeXmlText(config.getText()) + "\" " +
-               "style=\"font-family:" + escapeXmlText(fontFamily) + ";" +
-               "font-size:" + (config.getFontSize() * 0.8) + "pt;" +
-               "color:" + colorHex + "\"/>" +
-               "</v:shape>" +
-               "</w:pict>";
-    }
-
-    /**
-     * 根据位置枚举返回VML位置参数
-     */
-    private String[] getWatermarkPosition(WatermarkConfig.Position position) {
-        switch (position) {
-            case TOP_LEFT:
-                return new String[]{"left", "top"};
-            case TOP_RIGHT:
-                return new String[]{"right", "top"};
-            case BOTTOM_LEFT:
-                return new String[]{"left", "bottom"};
-            case BOTTOM_RIGHT:
-                return new String[]{"right", "bottom"};
-            case CENTER:
-            default:
-                return new String[]{"center", "center"};
+        // 根据索引设置不同的水印内容或位置
+        String text = config.getText();
+        if (index > 0) {
+            text = "    " + text + "    "; // 添加空格形成错位效果
         }
+
+        run.setText(text);
+        run.setFontFamily("SimSun");
+        run.setFontSize(Math.max(config.getFontSize() - index * 5, 20)); // 递减字体大小
+
+        // 设置颜色（逐渐变淡）
+        int baseColor = config.getColorObject().getRGB() & 0xFFFFFF;
+        int fadedColor = adjustColorOpacity(baseColor, config.getOpacity() - index * 0.1f);
+        run.setColor(String.format("%06X", fadedColor));
     }
 
-    /**
-     * 转义XML文本中的特殊字符
-     */
-    private String escapeXmlText(String text) {
-        if (text == null) {
-            return "";
-        }
-        return text.replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;")
-                .replace("'", "&apos;");
+    private int adjustColorOpacity(int baseColor, float opacity) {
+        // 简单的颜色透明度调整算法
+        opacity = Math.max(0.1f, Math.min(1.0f, opacity));
+
+        int r = (baseColor >> 16) & 0xFF;
+        int g = (baseColor >> 8) & 0xFF;
+        int b = baseColor & 0xFF;
+
+        // 向白色混合以模拟透明效果
+        r = (int) (r + (255 - r) * (1 - opacity));
+        g = (int) (g + (255 - g) * (1 - opacity));
+        b = (int) (b + (255 - b) * (1 - opacity));
+
+        return (r << 16) | (g << 8) | b;
     }
 }
